@@ -1,7 +1,11 @@
 package org.hyperledger.ariesframework.routing
 
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.datetime.Clock
 import org.hyperledger.ariesframework.InboundMessageContext
@@ -108,12 +112,19 @@ class MediationRecipient(private val agent: Agent, private val dispatcher: Dispa
         } else {
             val connection = agent.connectionService.processInvitation(invitation, outOfBandInvitation, getRouting(), true)
             val message = agent.connectionService.createRequest(connection.id)
-            agent.messageSender.send(message)
 
-            if (agent.connectionService.fetchState(connection) != ConnectionState.Complete) {
-                val result = agent.eventBus.waitFor<AgentEvents.ConnectionEvent> { it.record.state == ConnectionState.Complete }
-                if (!result) {
-                    throw RuntimeException("Connection to the mediator timed out.")
+            // Subscribe before send to avoid EventBus race (replay=0 SharedFlow).
+            coroutineScope {
+                val connectionDeferred = async(start = CoroutineStart.UNDISPATCHED) {
+                    agent.eventBus.waitFor<AgentEvents.ConnectionEvent> { it.record.state == ConnectionState.Complete }
+                }
+                agent.messageSender.send(message)
+                if (agent.connectionService.fetchState(connection) != ConnectionState.Complete) {
+                    if (!connectionDeferred.await()) {
+                        throw RuntimeException("Connection to the mediator timed out.")
+                    }
+                } else {
+                    connectionDeferred.cancel()
                 }
             }
 
@@ -149,8 +160,22 @@ class MediationRecipient(private val agent: Agent, private val dispatcher: Dispa
 
         mediationRecord = repository.getByConnectionId(connection.id)
         if (mediationRecord.state == MediationState.Requested) {
-            val result = agent.eventBus.waitFor<AgentEvents.MediationEvent> { it.record.state != MediationState.Requested }
-            if (!result) {
+            // Active polling: pick up messages every 2s up to 10 times to break the
+            // deadlock caused by the mediator queuing MediationGrant instead of returning it inline.
+            for (i in 1..10) {
+                delay(2000)
+                mediationRecord = repository.getByConnectionId(connection.id)
+                if (mediationRecord.state != MediationState.Requested) break
+                logger.debug("Polling for mediation grant, attempt $i")
+                try {
+                    pickupMessages(connection)
+                } catch (e: Exception) {
+                    logger.debug("Pickup failed during mediation polling: ${e.message}")
+                }
+                mediationRecord = repository.getByConnectionId(connection.id)
+                if (mediationRecord.state != MediationState.Requested) break
+            }
+            if (mediationRecord?.state == MediationState.Requested) {
                 throw RuntimeException("Mediation request timed out.")
             }
         }
@@ -296,8 +321,20 @@ class MediationRecipient(private val agent: Agent, private val dispatcher: Dispa
         agent.messageSender.send(message)
 
         if (!keylistUpdateDone) {
-            val result = agent.eventBus.waitFor<KeylistUpdateResponseMessage> { it.updated.isNotEmpty() }
-            if (!result) {
+            // Active polling: pick up messages every 1s up to 20 times to break the
+            // deadlock caused by the mediator queuing KeylistUpdateResponse instead of returning it inline.
+            for (i in 1..20) {
+                delay(1000)
+                if (keylistUpdateDone) break
+                logger.debug("Polling for keylist update response, attempt $i")
+                try {
+                    pickupMessages(connection)
+                } catch (e: Exception) {
+                    logger.debug("Pickup failed during keylist update polling: ${e.message}")
+                }
+                if (keylistUpdateDone) break
+            }
+            if (!keylistUpdateDone) {
                 throw Exception("Keylist update timed out")
             }
         }

@@ -14,7 +14,7 @@ import kotlinx.coroutines.launch
 import kotlin.time.Duration.Companion.seconds
 
 class EventBus {
-    private val _events = MutableSharedFlow<Any>()
+    private val _events = MutableSharedFlow<Any>(replay = 0, extraBufferCapacity = 64)
     val events = _events.asSharedFlow()
 
     suspend fun publish(event: Any) {

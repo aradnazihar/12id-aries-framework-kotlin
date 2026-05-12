@@ -30,7 +30,7 @@ class HttpOutboundTransport(val agent: Agent) : OutboundTransport {
                 .post(
                     Json.encodeToString(_package.payload)
                         .toByteArray() // prevent okHttp from adding charset=utf-8 to the content type
-                        .toRequestBody(DidCommMimeType.V1.value.toMediaType()),
+                        .toRequestBody(DidCommMimeType.V0.value.toMediaType()),
                 )
                 .build()
             val response = AgentHttpClient.client.newCall(request).execute()
@@ -43,9 +43,19 @@ class HttpOutboundTransport(val agent: Agent) : OutboundTransport {
             agent.receiveMessage(encryptedMessage)
         } else if (_package.responseRequested) {
             logger.debug("Requested response but got no data. Will initiate message pickup if necessary.")
+            val connectionId = _package.connectionId
             GlobalScope.launch {
                 delay(agent.agentConfig.mediatorEmptyReturnRetryInterval * 1000)
-                agent.mediationRecipient.pickupMessages()
+                if (connectionId != null) {
+                    val connection = runCatching { agent.connectionRepository.findById(connectionId) }.getOrNull()
+                    if (connection != null) {
+                        agent.mediationRecipient.pickupMessages(connection)
+                    } else {
+                        agent.mediationRecipient.pickupMessages()
+                    }
+                } else {
+                    agent.mediationRecipient.pickupMessages()
+                }
             }
         } else {
             logger.debug("No data received")
