@@ -30,54 +30,6 @@ jobs:
         env:
           VERSION: ${{ github.ref_name }}
 
-      - name: Mirror upstream uniffi-wrappers
-        run: |
-          # Download upstream uniffi artifacts and re-publish to releases repo
-          REPO="https://maven.pkg.github.com/nazihar/12id-sdk-kotlin"
-          UPSTREAM="https://maven.pkg.github.com/LF-Decentralized-Trust-labs/aries-uniffi-wrappers"
-          GROUP_PATH="org/hyperledger"
-
-          ARTIFACTS=(
-            "anoncreds_uniffi:0.2.0-wrapper.1"
-            "indy_vdr_uniffi:0.2.1-wrapper.2"
-            "askar_uniffi:0.2.0-wrapper.1"
-          )
-
-          for entry in "${ARTIFACTS[@]}"; do
-            ARTIFACT="${entry%%:*}"
-            VERSION="${entry##*:}"
-            BASE_URL="${UPSTREAM}/${GROUP_PATH}/${ARTIFACT}/${VERSION}"
-            DEST_URL="${REPO}/${GROUP_PATH}/${ARTIFACT}/${VERSION}"
-
-            echo "Mirroring ${ARTIFACT}:${VERSION}"
-
-            # Download POM
-            curl -sf -u "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
-              -o "${ARTIFACT}-${VERSION}.pom" \
-              "${BASE_URL}/${ARTIFACT}-${VERSION}.pom" || { echo "POM download failed for ${ARTIFACT}"; continue; }
-
-            # Download AAR
-            curl -sf -u "${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}" \
-              -o "${ARTIFACT}-${VERSION}.aar" \
-              "${BASE_URL}/${ARTIFACT}-${VERSION}.aar" || { echo "AAR download failed for ${ARTIFACT}"; continue; }
-
-            # Upload POM to releases repo
-            curl -sf -u "${{ github.actor }}:${{ secrets.PACKAGES_PAT }}" \
-              -X PUT \
-              -H "Content-Type: application/xml" \
-              --data-binary "@${ARTIFACT}-${VERSION}.pom" \
-              "${DEST_URL}/${ARTIFACT}-${VERSION}.pom"
-
-            # Upload AAR to releases repo
-            curl -sf -u "${{ github.actor }}:${{ secrets.PACKAGES_PAT }}" \
-              -X PUT \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@${ARTIFACT}-${VERSION}.aar" \
-              "${DEST_URL}/${ARTIFACT}-${VERSION}.aar"
-
-            echo "Done: ${ARTIFACT}:${VERSION}"
-          done
-
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
