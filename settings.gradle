@@ -44,6 +44,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "aries-framework-kotlin"
+rootProject.name = "12id-aries-framework-kotlin"
 include ':app'
 include ':ariesframework'

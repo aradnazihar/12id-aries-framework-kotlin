@@ -87,7 +87,7 @@ if (secretPropsFile.exists()) {
 if (ext["version"] != null) {
     ext["version"] = ext["version"].replaceFirst("v", "")
 } else {
-    ext["version"] = "2.4.1-fix"
+    ext["version"] = "2.4.1-1"
 }
 
 def getExtraString(name) {
@@ -102,8 +102,8 @@ afterEvaluate {
     publishing {
         repositories {
             maven {
-                name = "github"
-                setUrl("https://maven.pkg.github.com/hyperledger/aries-framework-kotlin")
+                name = "GitHubPackages"
+                setUrl("https://maven.pkg.github.com/nazihar/12id-sdk-kotlin")
                 credentials {
                     username = getExtraString("githubUsername")
                     password = getExtraString("githubToken")
@@ -113,8 +113,8 @@ afterEvaluate {
         publications {
             release(MavenPublication) {
                 from components.release
-                groupId 'org.hyperledger'
-                artifactId 'aries-framework-kotlin'
+                groupId 'io.github.nazihar'
+                artifactId '12id-aries-framework-kotlin'
                 version getExtraString("version")
             }
         }
